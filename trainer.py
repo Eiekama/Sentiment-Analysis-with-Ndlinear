@@ -1,0 +1,91 @@
+import random
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from multiprocessing import cpu_count
+from accelerate import Accelerator
+from tqdm import tqdm
+
+class Trainer():
+    def __init__(
+            self, model, dataset,
+            path_to_model,
+            batch_size=32,
+            num_epochs=10, save_every=1
+    ):
+        assert (num_epochs % save_every == 0)
+
+        self.accelerator = Accelerator(
+            split_batches=True,
+        )
+
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=cpu_count())
+        optim = torch.optim.Adam(model.parameters())
+        self.model, self.optim, self.dataloader = self.accelerator.prepare(model, optim, dataloader)
+
+        self.num_epochs = num_epochs
+        self.save_every = save_every
+        self.path = path_to_model
+    @property
+    def device(self):
+        return self.accelerator.device
+    
+    def save(self, step=None):
+        data = {
+            'model': self.accelerator.get_state_dict(self.model),
+            'optim': self.optim.state_dict(),
+            'scaler': self.accelerator.scaler.state_dict() if self.accelerator.scaler is not None else None
+        }
+        path = f"{self.path}.pt" if step is None else f"{self.path}_{step}.pt"
+        torch.save(data, path)
+
+    def load(self, step=None):
+        path = f"{self.path}.pt" if step is None else f"{self.path}_{step}.pt"
+        data = torch.load(path, map_location=self.device)
+
+        model = self.accelerator.unwrap_model(self.model)
+        model.load_state_dict(data['model'])
+        self.optim.load_state_dict(data['optim'])
+
+        if self.accelerator.scaler is not None and data['scaler'] is not None:
+            self.accelerator.scaler.load_state_dict(data['scaler'])
+
+    def train(self):
+        epoch = 0
+        with tqdm(
+            initial = epoch, total = self.num_epochs,
+            disable = not self.accelerator.is_main_process
+        ) as pbar:
+            while epoch < self.num_epochs:
+                for imgs, expected in self.dataloader:
+                    self.optim.zero_grad()
+                    predicted = self.model(imgs)
+                    loss = self.model.loss_fn(predicted, expected)
+                    self.accelerator.backward(loss)
+                    self.optim.step()
+                    if self.accelerator.is_main_process:
+                        pbar.set_description(f'Loss: {loss:.8f}')
+                        if (epoch+1) % self.save_every == 0:
+                            self.save(epoch+1)
+                epoch += 1
+                pbar.update(1)
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+if __name__ == "__main__":
+    set_seed(123)
+    
+    train_dataset = NotImplemented
+    val_dataset = NotImplemented
+
+    model = NotImplemented
+    trainer = Trainer(model, train_dataset, path_to_model="linear")
+    # trainer.load()
+    trainer.train()
+
+    model.eval()
