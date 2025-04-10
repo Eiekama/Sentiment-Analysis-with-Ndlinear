@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from einops import einsum, rearrange
+from typing import Type, Tuple
+from ndlinear import NdLinear
 
 # -----------------------------------------------------------------------------
 
@@ -92,9 +94,9 @@ class Block(nn.Module):
         start_memory = torch.cuda.memory_allocated()
         start_time = time.time()
         x = x + self.attn(self.ln_1(x))
-        x = x + self.mlpf(self.ln_2(x))
         end_time = time.time()
         end_memory = torch.cuda.memory_allocated()
+        x = x + self.mlpf(self.ln_2(x))
         return x, end_time-start_time, end_memory-start_memory
 
 class GPT(nn.Module):
@@ -161,7 +163,7 @@ class GPT(nn.Module):
         # separate out all parameters to those that will and won't experience regularizing weight decay
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (torch.nn.Linear, )
+        whitelist_weight_modules = (torch.nn.Linear)
         blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
@@ -221,3 +223,71 @@ class GPT(nn.Module):
             loss = F.cross_entropy(logits, targets, ignore_index=-1)
 
         return logits, loss, sum(block_times)/len(block_times), sum(block_mem_consumed)/len(block_mem_consumed)
+
+# -----------------------------------------------------------------------------
+
+class NdSelfAttention(nn.Module):
+    def __init__(
+            self,
+            n_embd: int,
+            n_head: int,
+            attn_pdrop: float,
+            resid_pdrop: float,
+        ):
+        super().__init__()
+        assert n_embd % n_head == 0
+        self.n_head = n_head
+        self.n_embd = n_embd
+
+        # key, query, value projections
+        self.qkv_proj = NdLinear((n_head, n_embd // n_head), (n_head, 3 * n_embd // n_head))
+        # output projection
+        self.out_proj = nn.NdLinear((n_head, n_embd // n_head), (n_head, n_embd // n_head))
+        # regularization
+        self.attn_dropout = nn.Dropout(attn_pdrop)
+        self.resid_dropout = nn.Dropout(resid_pdrop)
+
+    def forward(self, x):
+
+        x = rearrange(x, 'b t (h d) -> b t h d', h=self.n_head)
+        q, k ,v  = self.qkv_proj(x).split(self.n_embd // self.n_head, dim=-1)
+
+        # b = batch size, t/q/k = sequence length, h = number of heads, d = n_embd / number of heads
+        att = einsum(q, k, 'b q h d, b k h d -> b q h k') / math.sqrt(k.size(-1))
+        att = F.softmax(att, dim=-1)
+        att = self.attn_dropout(att)
+        
+        y = einsum(att, v, 'b q h t, b t h d -> b q h d')
+
+        # output projection
+        y = self.out_proj(y)
+        y = rearrange(y, 'b t h d -> b t (h d)')
+        y = self.resid_dropout(y)
+        return y
+
+class NdBlock(Block):
+    def __init__(
+            self,
+            n_embd: int,
+            n_query_head: int,
+            attn_pdrop: float,
+            resid_pdrop: float,
+        ):
+        super().__init__(n_embd, n_query_head, attn_pdrop, resid_pdrop)
+        self.attn = NdSelfAttention(n_embd, n_query_head, attn_pdrop, resid_pdrop)
+
+class NdGPT(GPT):
+    def __init__(
+            self,
+            vocab_size: int,
+            block_size: int, # max sequence length
+            n_embd: int,
+            output_dim: int,
+            n_head=4,
+            n_layer=6,
+            embd_pdrop=0.1,
+            resid_pdrop=0.1,
+            attn_pdrop=0.1,
+        ):
+        super().__init__(vocab_size, block_size, n_embd, output_dim, n_head, n_layer, embd_pdrop, resid_pdrop, attn_pdrop)
+        self.transformer.h = nn.ModuleList([NdBlock(n_embd, n_head, attn_pdrop, resid_pdrop) for _ in range(n_layer)])

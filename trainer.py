@@ -79,6 +79,9 @@ class Trainer():
                 pbar.update(1)
             wandb.log({"average_time": sum(block_times)/len(block_times), "average_memory": sum(block_mem)/len(block_mem)})
 
+    def evaluate(self, val_dataset):
+        for text, value in val_dataset.evaluate().items():
+            print(f"{text}: {value}")
 
 def set_seed(seed):
     random.seed(seed)
