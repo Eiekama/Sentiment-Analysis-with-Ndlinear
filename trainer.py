@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from accelerate import Accelerator
 from tqdm import tqdm
+import wandb
 
 from dataset import IMDbDataset
 from model import GPT
@@ -22,7 +23,7 @@ class Trainer():
         )
 
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        optim = torch.optim.Adam(model.parameters())
+        optim = model.configure_optimizers()
         self.model, self.optim, self.dataloader = self.accelerator.prepare(model, optim, dataloader)
 
         self.num_epochs = num_epochs
@@ -53,6 +54,9 @@ class Trainer():
             self.accelerator.scaler.load_state_dict(data['scaler'])
 
     def train(self):
+        block_times = []
+        block_mem = []
+
         epoch = 0
         with tqdm(
             initial = epoch, total = self.num_epochs,
@@ -61,15 +65,19 @@ class Trainer():
             while epoch < self.num_epochs:
                 for input_data, label in self.dataloader:
                     self.optim.zero_grad()
-                    _, loss = self.model(input_data, label)
+                    _, loss, time, mem = self.model(input_data, label)
                     self.accelerator.backward(loss)
                     self.optim.step()
                     if self.accelerator.is_main_process:
+                        block_times.append(time*1000) # saved in ms
+                        block_mem.append(mem/(1024*1024)) # saved in MB
+                        wandb.log({"loss": loss, "time": time*1000, "memory": mem/(1024*1024)})
                         pbar.set_description(f'Loss: {loss:.8f}')
                         if (epoch+1) % self.save_every == 0:
                             self.save(epoch+1)
                 epoch += 1
                 pbar.update(1)
+            wandb.log({"average_time": sum(block_times)/len(block_times), "average_memory": sum(block_mem)/len(block_mem)})
 
 
 def set_seed(seed):
@@ -79,6 +87,11 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 if __name__ == "__main__":
+    ACTIVATE_LOGGING = True
+    wandb_api = "ca7f0e161908db6645a6ec4a4b0a1714a3b2131c"
+    wandb.login(key=wandb_api)
+    wandb.init(project="NdLinear", mode="online" if ACTIVATE_LOGGING else "disabled")
+    
     set_seed(42)
 
     full_dataset = IMDbDataset("IMDbData.csv")
@@ -92,10 +105,10 @@ if __name__ == "__main__":
     trainer = Trainer(
         model, train_dataset, path_to_model="trained_weights/linear",
         batch_size=128,
-        num_epochs=10,
+        num_epochs=5,
         save_every=5,
     )
     # trainer.load()
     trainer.train()
 
-    model.eval()
+    # model.eval()

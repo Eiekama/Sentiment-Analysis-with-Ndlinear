@@ -2,7 +2,7 @@
 Adapted from Andrej Karpathy's implementation of a minimal GPT network at https://github.com/karpathy/minGPT
 """
 
-import math
+import math, time
 
 import torch
 import torch.nn as nn
@@ -88,9 +88,14 @@ class Block(nn.Module):
         self.mlpf = lambda x: m.dropout(m.c_proj(m.act(m.c_fc(x)))) # MLP forward
 
     def forward(self, x):
+        torch.cuda.empty_cache()
+        start_memory = torch.cuda.memory_allocated()
+        start_time = time.time()
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlpf(self.ln_2(x))
-        return x
+        end_time = time.time()
+        end_memory = torch.cuda.memory_allocated()
+        return x, end_time-start_time, end_memory-start_memory
 
 class GPT(nn.Module):
     """ GPT Language Model """
@@ -191,6 +196,8 @@ class GPT(nn.Module):
         return optimizer
 
     def forward(self, idx, targets=None):
+        block_times = []
+        block_mem_consumed = []
         device = idx.device
         b, t = idx.size()
         assert t <= self.block_size, f"Cannot forward sequence of length {t}, block size is only {self.block_size}"
@@ -201,7 +208,9 @@ class GPT(nn.Module):
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.drop(tok_emb + pos_emb)
         for block in self.transformer.h:
-            x = block(x)
+            x, time, mem = block(x)
+            block_times.append(time)
+            block_mem_consumed.append(mem)
         x = self.transformer.ln_f(x)
         x = rearrange(x, "b t e -> b (t e)")
         logits = self.lm_head(x)
@@ -211,4 +220,4 @@ class GPT(nn.Module):
         if targets is not None:
             loss = F.cross_entropy(logits, targets, ignore_index=-1)
 
-        return logits, loss
+        return logits, loss, sum(block_times)/len(block_times), sum(block_mem_consumed)/len(block_mem_consumed)
