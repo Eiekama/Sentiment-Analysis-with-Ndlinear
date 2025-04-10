@@ -2,9 +2,11 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from multiprocessing import cpu_count
 from accelerate import Accelerator
 from tqdm import tqdm
+
+from dataset import IMDbDataset
+from model import GPT
 
 class Trainer():
     def __init__(
@@ -19,7 +21,7 @@ class Trainer():
             split_batches=True,
         )
 
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=cpu_count())
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         optim = torch.optim.Adam(model.parameters())
         self.model, self.optim, self.dataloader = self.accelerator.prepare(model, optim, dataloader)
 
@@ -57,10 +59,9 @@ class Trainer():
             disable = not self.accelerator.is_main_process
         ) as pbar:
             while epoch < self.num_epochs:
-                for imgs, expected in self.dataloader:
+                for input_data, label in self.dataloader:
                     self.optim.zero_grad()
-                    predicted = self.model(imgs)
-                    loss = self.model.loss_fn(predicted, expected)
+                    _, loss = self.model(input_data, label)
                     self.accelerator.backward(loss)
                     self.optim.step()
                     if self.accelerator.is_main_process:
@@ -78,13 +79,22 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 if __name__ == "__main__":
-    set_seed(123)
-    
-    train_dataset = NotImplemented
-    val_dataset = NotImplemented
+    set_seed(42)
 
-    model = NotImplemented
-    trainer = Trainer(model, train_dataset, path_to_model="linear")
+    full_dataset = IMDbDataset("IMDbData.csv")
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        full_dataset,
+        [0.8, 0.2],
+        torch.Generator().manual_seed(42) # keeps train test split the same every run
+    )
+
+    model = GPT(full_dataset.vocab_size, full_dataset.max_length, 256, 2)
+    trainer = Trainer(
+        model, train_dataset, path_to_model="trained_weights/linear",
+        batch_size=128,
+        num_epochs=10,
+        save_every=5,
+    )
     # trainer.load()
     trainer.train()
 
