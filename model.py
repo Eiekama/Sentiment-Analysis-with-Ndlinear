@@ -91,11 +91,11 @@ class Block(nn.Module):
 
     def forward(self, x):
         torch.cuda.empty_cache()
-        start_memory = torch.cuda.memory_allocated()
         start_time = time.time()
+        start_memory = torch.cuda.memory_allocated()
         x = x + self.attn(self.ln_1(x))
-        end_time = time.time()
         end_memory = torch.cuda.memory_allocated()
+        end_time = time.time()
         x = x + self.mlpf(self.ln_2(x))
         return x, end_time-start_time, end_memory-start_memory
 
@@ -240,9 +240,9 @@ class NdSelfAttention(nn.Module):
         self.n_embd = n_embd
 
         # key, query, value projections
-        self.qkv_proj = NdLinear((n_head, n_embd // n_head), (n_head, 3 * n_embd // n_head))
+        self.qkv_proj = NdLinear((n_embd // n_head, n_head), (n_head, 3 * n_embd // n_head))
         # output projection
-        self.out_proj = nn.NdLinear((n_head, n_embd // n_head), (n_head, n_embd // n_head))
+        self.out_proj = NdLinear((n_embd // n_head, n_head), (n_head, n_embd // n_head))
         # regularization
         self.attn_dropout = nn.Dropout(attn_pdrop)
         self.resid_dropout = nn.Dropout(resid_pdrop)

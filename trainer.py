@@ -2,17 +2,19 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from torcheval.metrics.functional import binary_confusion_matrix
 from accelerate import Accelerator
 from tqdm import tqdm
 import wandb
 
 from dataset import IMDbDataset
-from model import GPT
+from model import GPT, NdGPT
 
 class Trainer():
     def __init__(
             self, model, dataset,
             path_to_model,
+            val_dataset=None,
             batch_size=32,
             num_epochs=10, save_every=1
     ):
@@ -25,6 +27,11 @@ class Trainer():
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         optim = model.configure_optimizers()
         self.model, self.optim, self.dataloader = self.accelerator.prepare(model, optim, dataloader)
+
+        self.val_dataloader = None
+        if val_dataset is not None:
+            self.val_dataloader = DataLoader(val_dataset, batch_size=batch_size)
+            self.val_dataloader = self.accelerator.prepare(self.val_dataloader)
 
         self.num_epochs = num_epochs
         self.save_every = save_every
@@ -79,9 +86,37 @@ class Trainer():
                 pbar.update(1)
             wandb.log({"average_time": sum(block_times)/len(block_times), "average_memory": sum(block_mem)/len(block_mem)})
 
-    def evaluate(self, val_dataset):
-        for text, value in val_dataset.evaluate().items():
-            print(f"{text}: {value}")
+    @staticmethod
+    def evaluate_batch(pred_logits, targ_labels):
+        pred_labels = torch.argmax(pred_logits, dim=-1)
+        num_correct = torch.sum(pred_labels == targ_labels).item()
+        confusion = binary_confusion_matrix(pred_labels, targ_labels)
+        return len(targ_labels), num_correct, confusion
+
+    def evaluate(self):
+        if self.val_dataloader is not None:
+            n = 0
+            accuracy = 0
+            confusion_matrix = torch.zeros((2,2), device=self.device)
+            for input_data, targ_labels in tqdm(self.val_dataloader):
+                pred_logits, *_ = model(input_data)
+                b, correct, confusion = self.evaluate_batch(pred_logits, targ_labels)
+                n += b
+                accuracy += correct
+                confusion_matrix += confusion
+            stats = {
+                "Total Number" : n,
+                "Accuracy" : accuracy/n,
+                "TP" : confusion_matrix[1,1],
+                "FP" : confusion_matrix[0,1],
+                "FN" : confusion_matrix[1,0],
+                "TN" : confusion_matrix[0,0],
+            }
+
+            for text, value in stats.items():
+                print(f"{text}: {value}")
+            return stats
+    
 
 def set_seed(seed):
     random.seed(seed)
@@ -104,14 +139,16 @@ if __name__ == "__main__":
         torch.Generator().manual_seed(42) # keeps train test split the same every run
     )
 
-    model = GPT(full_dataset.vocab_size, full_dataset.max_length, 256, 2)
+    model = NdGPT(full_dataset.vocab_size, full_dataset.max_length, 256, 2)
     trainer = Trainer(
-        model, train_dataset, path_to_model="trained_weights/linear",
+        model, train_dataset, path_to_model="trained_weights/ndlinear",
+        val_dataset=val_dataset,
         batch_size=128,
-        num_epochs=5,
+        num_epochs=10,
         save_every=5,
     )
-    # trainer.load()
+    # trainer.load(step=5)
     trainer.train()
 
-    # model.eval()
+    model.eval()
+    trainer.evaluate()
