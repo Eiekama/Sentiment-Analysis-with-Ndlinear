@@ -6,26 +6,26 @@ There was a lot of freedom in how I could choose to modify the baseline model wi
 What I decided to do was to modify the attention weight layers in the multiheaded self attention.
 
 Initially, the inputs are passed through a linear layer before the attention heads are separated.
-The modified version separates the attention heads first before passing the inputs into a ndlinear layer, maintaining the same desired output shape. One can refer to <c>model.py</c> for more details.
+The modified version separates the attention heads first before passing the inputs into a ndlinear layer, maintaining the same desired output shape. One can refer to `model.py` for more details.
 
-The dataset used for training and testing is [IMDB Dataset of 50K Movie Reviews](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews) [[2]](#2). I created a 4-1 train-test split by using Pytorch's <c>random_split</c> function with a fixed seed.
+The dataset used for training and testing is [IMDB Dataset of 50K Movie Reviews](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews) [[2]](#2). I created a 4-1 train-test split by using Pytorch's `random_split` function with a fixed seed.
 
-The hyperparameters used for the trainer and model can be found in the main function in <c>trainer.py</c>.
+The hyperparameters used for the trainer and model can be found in the main function in `trainer.py`.
 
 ## Results
 The following results were obtained from training on a NVIDIA RTX 4070 Super.
 
-<p align="center">
+<!-- <p align="center"> -->
 
 | **Model** | **Accuracy** | **Precision** | **Recall** | **Runtime\*/ms** | **Memory Used\*/Mb** |
 |:-:|:-:|:-:|:-:|:-:|:-:|
 | Baseline | 0.7778 | 0.7658 | 0.7957 | 2.971 | 487.5 |
 | Ndlinear | 0.8528 | 0.8779 | 0.8170 | 4.283 | 491.5 |
 
-<p align="center">
-Table 1: Performance results for both models.*Averaged across attention computations. See <c>forward</c> function in the <c>Block</c> class in <c>model.py</c> for details.
+<!-- <p align="center"> -->
+Table 1: Performance results for both models. *Averaged across attention computations. See `forward` function in the `Block` class in `model.py` for details.
 
-<p align="center">
+<!-- <p align="center"> -->
 <table>
 <tr><th>Baseline</th><th>Ndlinear</th></tr>
 <tr><td>
@@ -43,8 +43,8 @@ Table 1: Performance results for both models.*Averaged across attention computat
 | **Actual-** | 564 | 4473 |
 
 </td></tr> </table>
-<p align="center">
-Table 2: Confusion metrics for both models
+<!-- <p align="center"> -->
+Table 2: Confusion matrices for both models
 
 <!-- Baseline:<br>
 Accuracy: 0.7778<br>
