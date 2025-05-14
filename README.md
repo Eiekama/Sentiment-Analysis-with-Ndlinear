@@ -1,5 +1,7 @@
 # Sentiment Analysis with Ndlinear
-This project trains a lightweight GPT model [[1]](#1) to perform binary sentiment analysis on movie reviews. The model was further modified with Ndlinear, whose results were then compared with the initial baseline.
+[Ndlinear](https://github.com/ensemble-core/NdLinear) [[1]](#1) is a novel linear transformation proposed as a replacement for standard linear layers, promising performance improvements by preserving important cross-dimension information without increasing overhead.
+
+This project trains a lightweight GPT model [[2]](#2) to perform binary sentiment analysis on movie reviews. The model was further modified with Ndlinear, whose results were then compared with the initial baseline.
 
 ## Approach
 There was a lot of freedom in how I could choose to modify the baseline model with Ndlinear.
@@ -8,7 +10,7 @@ What I decided to do was to modify the attention weight layers in the multiheade
 Initially, the inputs are passed through a linear layer before the attention heads are separated.
 The modified version separates the attention heads first before passing the inputs into a ndlinear layer, maintaining the same desired output shape. One can refer to `model.py` for more details.
 
-The dataset used for training and testing is [IMDB Dataset of 50K Movie Reviews](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews) [[2]](#2). I created a 4-1 train-test split by using Pytorch's `random_split` function with a fixed seed.
+The dataset used for training and testing is [IMDB Dataset of 50K Movie Reviews](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews) [[3]](#3). I created a 4-1 train-test split by using Pytorch's `random_split` function with a fixed seed.
 
 The hyperparameters used for the trainer and model can be found in the main function in `trainer.py`.
 
@@ -81,7 +83,10 @@ This project demonstrates the strong potential that Ndlinear has to improve mode
  ## References
 
 <a id="1">[1]</a>
- Andrej Karpathy (2023). minGPT \[Software\]. Github. https://github.com/karpathy/minGPT
+Reneau, A., Hu, J. Y.-C., Zhuang, Z., & Liu, T.-C. (2025). NdLinear is all you need for representation learning (arXiv preprint arXiv:2503.17353). arXiv. https://arxiv.org/abs/2503.17353
 
 <a id="2">[2]</a>
+ Andrej Karpathy (2023). minGPT \[Software\]. Github. https://github.com/karpathy/minGPT
+
+<a id="3">[3]</a>
  Maas, A. L., Daly, R. E., Pham, P. T., Huang, D., Ng, A. Y., & Potts, C. (2011). Learning word vectors for sentiment analysis. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies (pp. 142–150). Association for Computational Linguistics. http://www.aclweb.org/anthology/P11-1015
